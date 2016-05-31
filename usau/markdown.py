@@ -1,4 +1,6 @@
 """
+Utility functions for formatting pandas dataframes as markdown.
+
 See http://stackoverflow.com/questions/13394140/generate-markdown-tables
 
 Generates tables for Doxygen flavored Markdown.  See the Doxygen
@@ -11,9 +13,7 @@ left_rule = {'<': ':', '^': ':', '>': '-'}
 right_rule = {'<': '-', '^': ':', '>': ':'}
 
 def evalute_field(record, field_spec):
-    """
-    Evalute a field of a record using the type of the field_spec as a guide.
-    """
+    """Evalute a field of a record using the type of the field_spec as a guide."""
     if type(field_spec) is int:
         return str(record[field_spec])
     elif type(field_spec) is str:
@@ -22,17 +22,16 @@ def evalute_field(record, field_spec):
         return str(field_spec(record))
 
 def to_markdown(records, fields, headings, alignment=None):
-    """
-    Generate a Doxygen-flavor Markdown table from records.
+    """Generate a Doxygen-flavor Markdown table from records.
 
-    records -- Iterable.  Rows will be generated from this.
-    fields -- List of fields for each row.  Each entry may be an integer,
+    records: Iterable.  Rows will be generated from this.
+    fields: List of fields for each row.  Each entry may be an integer,
         string or a function.  If the entry is an integer, it is assumed to be
         an index of each record.  If the entry is a string, it is assumed to be
         a field of each record.  If the entry is a function, it is called with
         the record and its return value is taken as the value of the field.
-    headings -- List of column headings.
-    alignment - List of pairs alignment characters.  The first of the pair
+    headings (iterable[str]): List of column headings.
+    alignment: List of pairs alignment characters.  The first of the pair
         specifies the alignment of the header, (Doxygen won't respect this, but
         it might look good, the second specifies the alignment of the cells in
         the column.
@@ -92,3 +91,11 @@ def pandas_to_markdown(frame, alignment=None):
   """Convert a pandas dataframe to markdown"""
   return to_markdown(frame.values, list(range(len(frame.columns))), frame.columns,
                      alignment=alignment)
+
+def display(frame, use_markdown=True):
+  """Display as a HTML table in jupyter or as a markdown-formatted text table"""
+  if use_markdown:
+    print(pandas_to_markdown(frame))
+  else:
+    import IPython.display
+    IPython.display.display(frame)

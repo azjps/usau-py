@@ -1,18 +1,24 @@
+#!/usr/bin/env python
+"""
+Summarize ultimate fantasy scores and results.
+"""
 from __future__ import print_function
+
+import argparse
 
 import numpy as np
 import pandas as pd
 
-import markdown
-import usau_results as usau
+from usau import markdown, reports
 
-def compute_d1_fantasy_picks():
-  """ """
-  d1_mens = usau.USAUResults("USA-Ultimate-D-I-College-Championships-2016", "Men")
-  d1_womens = usau.USAUResults("USA-Ultimate-D-I-College-Championships-2016", "Women")
-
-  fantasy_mens = d1_mens.rosters
-  fantasy_womens = d1_womens.rosters
+def compute_fantasy_picks(captain_multiplier=2, from_csv=False):
+  """Convert fantasy picks to an indicator matrix"""
+  # I'll wait until a next fantasy contest to see if this should be generalized ..
+  if from_csv:
+    reports.d1_college_nats_men_2016.load_from_csvs()
+    reports.d1_college_nats_women_2016.load_from_csvs()
+  fantasy_mens = reports.d1_college_nats_men_2016.rosters
+  fantasy_womens = reports.d1_college_nats_women_2016.rosters
 
   for user, fantasy_lines in get_fantasy_input().iteritems():
     fantasy_mens[user] = 0
@@ -20,8 +26,9 @@ def compute_d1_fantasy_picks():
 
     for gender, fantasy_line in fantasy_lines.iteritems():
       for player in fantasy_line:
-        captain_multiplier = 2 if player.endswith("*") else 1
-        if captain_multiplier == 2:
+        player_multiplier = 1
+        if player.endswith("*"):
+          player_multiplier = captain_multiplier
           player = player[:-1]
         player = player.strip()
 
@@ -30,46 +37,70 @@ def compute_d1_fantasy_picks():
         elif gender == "Women":
           fantasy = fantasy_womens
 
+        # Try to guess name. First based on matching full name, then
+        # by matching on last name.
         mask = fantasy.UpperName.str.contains(player.upper())
         if sum(mask) == 1:
-          fantasy[user] += mask * captain_multiplier
+          fantasy[user] += mask * player_multiplier
         elif sum(mask) > 1:
-          print(user, player)
-          # print(fantasy[mask]["UpperName"])
+          print("Found multiple matching players:",
+                user, player, fantasy.loc[mask, "UpperName"].values)
         else:
           mask = fantasy.UpperName.str.contains(player.split()[-1].upper())
           if sum(mask) == 1:
-            fantasy[user] += mask * captain_multiplier
+            fantasy[user] += mask * player_multiplier
           else:
-            print(user, player, fantasy[mask]["UpperName"])
+            print("Found multiple or no matching players:",
+                  user, player, fantasy.loc[mask, "UpperName"].values)
 
   users = sorted(get_fantasy_input().keys(), key=lambda x: x.upper())
-  assert all(fantasy_mens[users].sum() == 8)
-  assert all(fantasy_womens[users].sum() == 8)
+  assert all(fantasy_mens[users].sum() == 6 + captain_multiplier)
+  assert all(fantasy_womens[users].sum() == 6 + captain_multiplier)
 
   fantasy_mens["Fantasy Picks"] = fantasy_mens[users].sum(axis=1)
   fantasy_womens["Fantasy Picks"] = fantasy_womens[users].sum(axis=1)
 
   return fantasy_mens, fantasy_womens, users
 
-def print_d1_fantasy_results(num_players=20, use_markdown=False):
-  import IPython.display
-  mens, womens, users = compute_d1_fantasy_picks()
-  for df in (mens, womens):
-    df["Fantasy Score"] = df.Goals + df.Assists + 0.2 * df.Ds - 0.2 * df.Turns
-    top_fantasy_players = np.zeros(len(df), dtype=np.bool)
-    top_fantasy_players[df["Fantasy Score"].argsort()[::-1][:num_players]] = True
-    # IPython.display.display(df[top_fantasy_players][["Name", "Fantasy Score"]])
-    result = (df[(df["Fantasy Picks"] > 0) | top_fantasy_players]
-                  [["No.", "Name", "Fantasy Score", "Position", "Height",
-                    "Goals", "Assists", "Ds", "Turns",
-                    "Team", "Seed", "Fantasy Picks"]]
-                  .sort(["Fantasy Score", "Seed"], ascending=False))
-    if use_markdown:
-      print(markdown.pandas_to_markdown(result))
-    else:
-      IPython.display.display(result)
+def compute_athlete_fantasy_scores(df, min_players=20, goal_weight=1, assist_weight=1,
+                                  d_weight=0.2, turn_weight=-0.2):
+  """Compute fantasy score
 
+  Args:
+      df (pd.DataFrame): Player contributions and fantasy picks
+      min_players (int): Minimum number of players to show, sorted by fantasy score
+  """
+  df["Fantasy Score"] = (df.Goals * goal_weight + df.Assists * assist_weight +
+                         df.Ds * d_weight + df.Turns * turn_weight)
+  # Sort players by fantasy score and mark top min_players
+  top_fantasy_players = np.zeros(len(df), dtype=np.bool)
+  top_fantasy_players[df["Fantasy Score"].argsort().values[::-1][:min_players]] = True
+  # Union of all players with non-zero fantasy picks and top min_players by fantasy score
+  result = (df[(df["Fantasy Picks"] > 0) | top_fantasy_players]
+                [["No.", "Name", "Fantasy Score", "Position", "Height",
+                  "Goals", "Assists", "Ds", "Turns",
+                  "Team", "Seed", "Fantasy Picks"]]
+                .sort(["Fantasy Score", "Seed"], ascending=False))
+  return result
+
+def compute_fantasy_contest_results(min_players=20, use_markdown=False, display=True, from_csv=False):
+  """Calculate fantasy results (for athletes and contest users)
+
+  Args:
+      min_players (int): Minimum number of players to show
+      display (bool): Display results to stdout / jupyter
+      use_markdown (bool): Print results as a markdown-formatted table
+      from_csv (bool): Load data from offline csvs
+  """
+  mens, womens, users = compute_fantasy_picks(from_csv=from_csv)
+  # Show the top-scoring players, sorted by fantasy score
+  if display:
+    markdown.display(compute_athlete_fantasy_scores(mens, min_players=min_players),
+                     use_markdown=use_markdown)
+    markdown.display(compute_athlete_fantasy_scores(womens, min_players=min_players),
+                     use_markdown=use_markdown)
+
+  # Show the fantasy contest users sorted by fantasy score
   results = []
   for user in users:
     results.append({"User": user,
@@ -78,14 +109,16 @@ def print_d1_fantasy_results(num_players=20, use_markdown=False):
   results = pd.DataFrame(results)
   results["Total"] = results["Men's"] + results["Women's"]
   results = results.sort("Total", ascending=False)[["User", "Total", "Men's", "Women's"]]
-  if use_markdown:
-    print(markdown.pandas_to_markdown(results))
-  else:
-    IPython.display.display(results)
+  if display:
+    markdown.display(results, use_markdown=use_markdown)
   return results
 
 def get_fantasy_input():
-  """Captain marked by asterisk"""
+  """Mapping of users to fantasy lines, with captain marked by asterisk.
+
+  Each fantasy line should have exactly 7 players, one of which is marked captain.
+  This probably should be offloaded to some configuration file.
+  """
   return {
       "scottyskin96": {
         "Men": ["Dalton Smith", "John Stubbs*", "Xavier Maxstadt", "Ben Jagt", "Joe Marmerstein", "Khalif", "Trent Dillon"],
@@ -146,14 +179,14 @@ def get_fantasy_input():
       }
 
 if __name__ == "__main__":
-  import argparse
   parser = argparse.ArgumentParser()
   parser.add_argument("--num_players", type=int, default=20, help="Minimum number of top scorers")
   parser.add_argument("--markdown", action="store_true", help="Output as markdown")
+  parser.add_argument("--csv", action="store_true", help="Load data from offline csvs")
   args = parser.parse_args()
 
   with pd.option_context("display.width", 1000,
                          "display.max_rows", 100,
                          "display.max_columns", 100,
                          "display.max_colwidth", 100):
-    print_d1_fantasy_results(num_players=args.num_players, use_markdown=args.markdown)
+    compute_fantasy_contest_results(num_players=args.num_players, use_markdown=args.markdown)
