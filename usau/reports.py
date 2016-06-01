@@ -208,6 +208,9 @@ class USAUResults(object):
       away_roster = self.clean_match_report_stats(away_roster)
 
       # Attach metadata for context with the players statistics
+      # This can be determined by joining with the match_results table also,
+      # by joining on url, but we'll offer these fields for convenience, since
+      # there isn't much data to save anyway.
       home_roster["url"] = url
       away_roster["url"] = url
       home_roster["Team"] = home_name
@@ -216,6 +219,10 @@ class USAUResults(object):
       away_roster["Seed"] = away_seed
       home_roster["Score"] = home_total_score
       away_roster["Score"] = away_total_score
+      home_roster["Opp Team"] = away_name
+      away_roster["Opp Team"] = home_name
+      home_roster["Opp Seed"] = away_seed
+      away_roster["Opp Seed"] = home_seed
       home_roster["Opp Score"] = away_total_score
       away_roster["Opp Score"] = home_total_score
 
