@@ -8,4 +8,5 @@ setup(name='USAUResults',
       author='azjps',
       author_email='azjps@users.noreply.github.com',
       packages=['usau'],
+      package_data={'usau': ['data/*.csv']},
      )

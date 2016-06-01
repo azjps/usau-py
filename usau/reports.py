@@ -2,6 +2,9 @@
 Load and clean player/team tournament data from play.usaultimate.org.
 """
 
+from __future__ import print_function
+
+from collections import OrderedDict
 import os
 import re
 import urllib
@@ -29,6 +32,7 @@ class USAUResults(object):
   BASE_URL = "http://play.usaultimate.org"
 
   def __init__(self, event, gender, competition="College"):
+    assert isinstance(event, basestring) and isinstance(gender, basestring)
     self.event = event
     self.gender = gender
     self.competition = competition
@@ -179,6 +183,13 @@ class USAUResults(object):
       scores = self.get_html_tables(url, match="Total:")[0].T
       assert len(scores.columns) == 2
       home_team, away_team = scores.iloc[0]
+      if home_team == "TBD" and away_team == "TBD":
+        # See for example the consolation game b/w Cincinnati and Illinois in D-I Men's 2015,
+        # which links to the following empty match report
+        # http://play.usaultimate.org/teams/events/match_report/?
+        # EventGameId=tu5uM3hYbU6FDLJw%2byP1b33zbjMeXu%2bbIJiyiqteRbo%3d
+        print("Empty or malformed match report:", self.BASE_URL + url)
+        continue
       home_name, home_seed = self.split_team_seed(home_team)
       away_name, away_seed = self.split_team_seed(away_team)
       home_total_score, away_total_score = scores.iloc[-1]
@@ -250,6 +261,20 @@ class USAUResults(object):
     """Returns pd.DataFrame of matches where goals/assists do not match final result"""
     results = self.match_results
     return results[(results.Gs < results.Score) | (results.As < results.Score)]
+
+  @property
+  def team_results(self):
+    """Returns pd.DataFrame of teams to games played, won, etc"""
+    matches = self.match_results
+    matches["is_win"] = matches["Score"] > matches["Opp Score"]
+    gb = matches.groupby("Team")
+    return pd.DataFrame(OrderedDict([("Games Played", gb["Score"].count()),
+                                     ("Games Won", gb["is_win"].sum()),
+                                     ("Points Scored", gb["Score"].sum()),
+                                     ("Points Lost", gb["Opp Score"].sum()),
+                                     ("Ds", gb["Ds"].sum()),
+                                     ("Ts", gb["Ts"].sum()),
+                                     ]))
 
   @classmethod
   def get_html_tables(cls, url, match, header=None):

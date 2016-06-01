@@ -11,7 +11,7 @@ import pandas as pd
 
 from usau import markdown, reports
 
-def compute_fantasy_picks(captain_multiplier=2, from_csv=False):
+def compute_fantasy_picks(captain_multiplier=2, from_csv=False, fantasy_input=None):
   """Convert fantasy picks to an indicator matrix"""
   # I'll wait until a next fantasy contest to see if this should be generalized ..
   if from_csv:
@@ -20,7 +20,8 @@ def compute_fantasy_picks(captain_multiplier=2, from_csv=False):
   fantasy_mens = reports.d1_college_nats_men_2016.rosters
   fantasy_womens = reports.d1_college_nats_women_2016.rosters
 
-  for user, fantasy_lines in get_fantasy_input().iteritems():
+  fantasy_input = fantasy_input or get_fantasy_input()
+  for user, fantasy_lines in fantasy_input.iteritems():
     fantasy_mens[user] = 0
     fantasy_womens[user] = 0
 
@@ -53,7 +54,7 @@ def compute_fantasy_picks(captain_multiplier=2, from_csv=False):
             print("Found multiple or no matching players:",
                   user, player, fantasy.loc[mask, "UpperName"].values)
 
-  users = sorted(get_fantasy_input().keys(), key=lambda x: x.upper())
+  users = sorted(fantasy_input.keys(), key=lambda x: x.upper())
   assert all(fantasy_mens[users].sum() == 6 + captain_multiplier)
   assert all(fantasy_womens[users].sum() == 6 + captain_multiplier)
 
@@ -63,7 +64,7 @@ def compute_fantasy_picks(captain_multiplier=2, from_csv=False):
   return fantasy_mens, fantasy_womens, users
 
 def compute_athlete_fantasy_scores(df, min_players=20, goal_weight=1, assist_weight=1,
-                                  d_weight=0.2, turn_weight=-0.2):
+                                   d_weight=0.2, turn_weight=-0.2):
   """Compute fantasy score
 
   Args:
@@ -77,13 +78,11 @@ def compute_athlete_fantasy_scores(df, min_players=20, goal_weight=1, assist_wei
   top_fantasy_players[df["Fantasy Score"].argsort().values[::-1][:min_players]] = True
   # Union of all players with non-zero fantasy picks and top min_players by fantasy score
   result = (df[(df["Fantasy Picks"] > 0) | top_fantasy_players]
-                [["No.", "Name", "Fantasy Score", "Position", "Height",
-                  "Goals", "Assists", "Ds", "Turns",
-                  "Team", "Seed", "Fantasy Picks"]]
-                .sort(["Fantasy Score", "Seed"], ascending=False))
+            .sort(["Fantasy Score", "Seed"], ascending=False))
   return result
 
-def compute_fantasy_contest_results(min_players=20, use_markdown=False, display=True, from_csv=False):
+def compute_fantasy_contest_results(min_players=20, use_markdown=False, display=True, from_csv=False,
+                                    fantasy_input=None, beta=0.2, captain_multiplier=2):
   """Calculate fantasy results (for athletes and contest users)
 
   Args:
@@ -92,13 +91,19 @@ def compute_fantasy_contest_results(min_players=20, use_markdown=False, display=
       use_markdown (bool): Print results as a markdown-formatted table
       from_csv (bool): Load data from offline csvs
   """
-  mens, womens, users = compute_fantasy_picks(from_csv=from_csv)
+  mens, womens, users = compute_fantasy_picks(from_csv=from_csv, captain_multiplier=captain_multiplier,
+                                              fantasy_input=fantasy_input)
   # Show the top-scoring players, sorted by fantasy score
+  mens = compute_athlete_fantasy_scores(mens, min_players=min_players,
+                                        d_weight=beta, turn_weight=-beta)
+  womens = compute_athlete_fantasy_scores(womens, min_players=min_players,
+                                          d_weight=beta, turn_weight=-beta)
   if display:
-    markdown.display(compute_athlete_fantasy_scores(mens, min_players=min_players),
-                     use_markdown=use_markdown)
-    markdown.display(compute_athlete_fantasy_scores(womens, min_players=min_players),
-                     use_markdown=use_markdown)
+    display_cols = ["No.", "Name", "Fantasy Score", "Position", "Height",
+                    "Goals", "Assists", "Ds", "Turns",
+                    "Team", "Seed", "Fantasy Picks"]
+    markdown.display(mens[display_cols], use_markdown=use_markdown)
+    markdown.display(womens[display_cols], use_markdown=use_markdown)
 
   # Show the fantasy contest users sorted by fantasy score
   results = []
@@ -189,4 +194,6 @@ if __name__ == "__main__":
                          "display.max_rows", 100,
                          "display.max_columns", 100,
                          "display.max_colwidth", 100):
-    compute_fantasy_contest_results(num_players=args.num_players, use_markdown=args.markdown)
+    compute_fantasy_contest_results(num_players=args.num_players,
+                                    use_markdown=args.markdown,
+                                    from_csv=args.csv)
