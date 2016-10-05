@@ -45,16 +45,16 @@ class USAUResults(object):
     self.match_result_dfs = None
     self.score_progression_dfs = None
 
-  def to_csvs(self, data_dir=None):
+  def to_csvs(self, data_dir=None, encoding='utf-8'):
     """Write data to given directory in the form of csv files"""
     if data_dir is None:
       data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     assert isinstance(data_dir, basestring)
     base_path = os.path.join(os.path.expanduser(data_dir), self.event + "-" + self.gender)
 
-    self.rosters.to_csv(base_path + "-Rosters.csv")
-    self.match_reports.to_csv(base_path + "-Match-Reports.csv")
-    self.match_results.to_csv(base_path + "-Match-Results.csv")
+    self.rosters.to_csv(base_path + "-Rosters.csv", encoding=encoding)
+    self.match_reports.to_csv(base_path + "-Match-Reports.csv", encoding=encoding)
+    self.match_results.to_csv(base_path + "-Match-Results.csv", encoding=encoding)
     # self.score_progressions.to_csv(base_path + "-Scores.csv")
 
   def load_from_csvs(self, data_dir=None):
@@ -303,3 +303,10 @@ d1_college_nats_men_2016 = USAUResults("USA-Ultimate-D-I-College-Championships-2
 d1_college_nats_women_2016 = USAUResults("USA-Ultimate-D-I-College-Championships-2016", "Women")
 d3_college_nats_men_2016 = USAUResults("USA-Ultimate-D-III-College-Championships-2016", "Men")
 d3_college_nats_women_2016 = USAUResults("USA-Ultimate-D-III-College-Championships-2016", "Women")
+
+club_nats_men_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Men")
+club_nats_women_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Women")
+club_nats_mixed_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Mixed")
+club_nats_men_2016 = USAUResults("USA-Ultimate-National-Championships-2016", "Men")
+club_nats_women_2016 = USAUResults("USA-Ultimate-National-Championships-2016", "Women")
+club_nats_mixed_2016 = USAUResults("USA-Ultimate-National-Championships-2016", "Mixed")
