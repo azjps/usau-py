@@ -57,17 +57,27 @@ class USAUResults(object):
     self.match_results.to_csv(base_path + "-Match-Results.csv", encoding=encoding)
     # self.score_progressions.to_csv(base_path + "-Scores.csv")
 
-  def load_from_csvs(self, data_dir=None):
+    print("Finished writing CSVs to {data_dir}".format(data_dir=data_dir))
+
+  def load_from_csvs(self, data_dir=None, mandatory=True, write=True):
     """Load data from offline csv files"""
     if data_dir is None:
       data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
     assert isinstance(data_dir, basestring)
     base_path = os.path.join(os.path.expanduser(data_dir), self.event + "-" + self.gender)
 
-    self.roster_dfs = pd.read_csv(base_path + "-Rosters.csv")
-    self.match_report_dfs = pd.read_csv(base_path + "-Match-Reports.csv")
-    self.match_result_dfs = pd.read_csv(base_path + "-Match-Results.csv")
-    # self.score_progression_dfs = pd.read_csv(base_path + "-Scores.csv")
+    try:
+      self.roster_dfs = pd.read_csv(base_path + "-Rosters.csv")
+      self.match_report_dfs = pd.read_csv(base_path + "-Match-Reports.csv")
+      self.match_result_dfs = pd.read_csv(base_path + "-Match-Results.csv")
+      # self.score_progression_dfs = pd.read_csv(base_path + "-Scores.csv")
+    except IOError:
+      print("Unable to open downloaded CSVs at {path}"
+            .format(path=base_path))
+      if not mandatory:
+        self.to_csvs(data_dir=data_dir)
+        return self
+      raise
     return self
 
   @classmethod
@@ -145,6 +155,11 @@ class USAUResults(object):
       if text.startswith("#"):
         return text.split(" ", 1)[1]
       return text
+
+    if all((c in table.columns for c in ("No.", "Name", "UpperName",
+                                         "Gs", "As", "Ds", "Ts"))):
+      # Make idempotent
+      return table
 
     table["No."] = table["Players"].apply(split_no)
     table["Name"] = table["Players"].apply(split_name)
@@ -290,6 +305,32 @@ class USAUResults(object):
       url = cls.BASE_URL + url
     return memoize_read_html(url, match=match, header=header)
 
+  @classmethod
+  def from_nationals(cls, level, year, gender):
+    """Load competition results from human-readable strings
+
+    Args:
+        level (str): One of "club", "d1college", "d3college"
+        year (int | str): 20xx
+        gender (str): One of "Men", "Mixed", "Women"
+    """
+    assert gender in ("Men", "Mixed", "Women"), "Unknown gender input: {gender}".format(gender=gender)
+    year = str(year)
+    if level.lower() == "club":
+      return cls("USA-Ultimate-National-Championships-" + year, gender)
+    elif level.lower() in ("d1college",):
+      if year == "2017":
+        # Permanent change in the URL?
+        return cls(year + "-USA-Ultimate-College-Championships", gender)
+      return cls("USA-Ultimate-D-I-College-Championships-" + year, gender)
+    elif level.lower() in ("d3college",):
+      return cls("USA-Ultimate-D-III-College-Championships-" + year, gender)
+    raise ValueError("Unrecognized competition level {level}, choices: {choices}"
+                     .format(level=level, choices=_NATIONALS_LEVELS))
+
+  # Class members
+  _NATIONALS_LEVELS = ["club", "d1college", "d3college"]
+
 # For tab-completion convenience
 d1_college_nats_men_2014 = USAUResults("USA-Ultimate-D-I-College-Championships", "Men")
 d1_college_nats_women_2014 = USAUResults("USA-Ultimate-D-I-College-Championships", "Women")
@@ -303,6 +344,10 @@ d1_college_nats_men_2016 = USAUResults("USA-Ultimate-D-I-College-Championships-2
 d1_college_nats_women_2016 = USAUResults("USA-Ultimate-D-I-College-Championships-2016", "Women")
 d3_college_nats_men_2016 = USAUResults("USA-Ultimate-D-III-College-Championships-2016", "Men")
 d3_college_nats_women_2016 = USAUResults("USA-Ultimate-D-III-College-Championships-2016", "Women")
+d1_college_nats_men_2017 = USAUResults("2017-USA-Ultimate-College-Championships", "Men")
+d1_college_nats_women_2017 = USAUResults("2017-USA-Ultimate-College-Championships", "Women")
+d3_college_nats_men_2017 = USAUResults("USA-Ultimate-D-III-College-Championships-2017", "Men")
+d3_college_nats_women_2017 = USAUResults("USA-Ultimate-D-III-College-Championships-2017", "Women")
 
 club_nats_men_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Men")
 club_nats_women_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Women")
