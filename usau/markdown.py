@@ -8,20 +8,30 @@ documentation for details:
   http://www.stack.nl/~dimitri/doxygen/manual/markdown.html#md_tables.
 """
 
+import pandas as pd
+
 # Translation dictionaries for table alignment
 left_rule = {'<': ':', '^': ':', '>': '-'}
 right_rule = {'<': '-', '^': ':', '>': ':'}
 
-def evalute_field(record, field_spec):
-    """Evalute a field of a record using the type of the field_spec as a guide."""
+def evaluate_field(record, field_spec, float_format=None):
+    """Evaluate a field of a record using the type of the field_spec as a guide.
+
+    float_format: lambda which returns a formatted string for a float
+    """
     if type(field_spec) is int:
-        return str(record[field_spec])
+        value = record[field_spec]
+        if isinstance(value, float):
+          float_format = float_format or pd.get_option('display.float_format')
+          if float_format is not None:
+            return float_format(value)
+        return str(value)
     elif type(field_spec) is str:
         return str(getattr(record, field_spec))
     else:
         return str(field_spec(record))
 
-def to_markdown(records, fields, headings, alignment=None):
+def to_markdown(records, fields, headings, alignment=None, float_format=None):
     """Generate a Doxygen-flavor Markdown table from records.
 
     records: Iterable.  Rows will be generated from this.
@@ -52,7 +62,7 @@ def to_markdown(records, fields, headings, alignment=None):
     columns = [[] for i in range(num_columns)]
     for record in records:
         for i, field in enumerate(fields):
-            columns[i].append(evalute_field(record, field))
+            columns[i].append(evaluate_field(record, field, float_format=float_format))
 
     # Fill out any missing alignment characters.
     extended_align = alignment if alignment != None else []

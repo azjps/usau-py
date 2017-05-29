@@ -3,6 +3,8 @@ Python utilities for scraping ultimate tournament data from USAU
 
 This repository includes some simple python modules for scraping the USAU website for tournament results, and some utility functions to manipulate and clean this data. It also includes some examples of such data downloaded as csv files, and some jupyter notebooks illustrating some statistical visualizations gleaned from this data.
 
+The `nationals_player_stats.py` CLI script provides a quick way to glean the top player contributions from a nationals tournament, where player statistics are tracked with some reliability.
+
 ## Notebooks (via nbviewer)
 
 * [2016 D-I College Nationals Fantasy Wrap-up](https://nbviewer.jupyter.org/github/azjps/usau-py/blob/master/notebooks/2016_D-I_College_Nationals_Fantasy_Stats.ipynb): Winners of the [/r/ultimate fantasy contest](https://www.reddit.com/r/ultimate/comments/4l74rn/fantasy_lineup_di_college_nationals_2016/) and some overall player statistics

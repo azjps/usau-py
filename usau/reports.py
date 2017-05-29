@@ -192,8 +192,9 @@ class USAUResults(object):
     score_progressions = []
     # This is trivially parallelizable, but since we have data cached in csvs
     # don't really need to worry about speeding this up.
-    for link in match_links:
-      url = link.attrs["href"]
+    # NOTE: sometimes scraper can pick up duplicate URLs, so make sure
+    # to unique-ify the URL set.
+    for url in set([link.attrs["href"] for link in match_links]):
       # Score-line, i.e. 1-0 1-1 1-2 1-3 2-3
       scores = self.get_html_tables(url, match="Total:")[0].T
       assert len(scores.columns) == 2
