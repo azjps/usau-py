@@ -7,6 +7,8 @@ Example:
 
     ./nationals_player_stats.py -y 2017 --level d1college --markdown
 """
+from __future__ import print_function
+
 import argparse
 
 import pandas as pd
@@ -25,6 +27,8 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument("-y", "--year", type=int, required=True,
                       help="Year, e.g. 20xx")
+  parser.add_argument("-e", "--event", default="nationals",
+                      help="USAU event label, such as \"nationals\" or \"us open\"")
   parser.add_argument("-l", "--level",
                       required=True, choices=usau.reports.USAUResults._NATIONALS_LEVELS,
                       help="Competition level")
@@ -34,6 +38,8 @@ if __name__ == "__main__":
                       help="Enumerate genders (by default all)")
   parser.add_argument("--markdown", action="store_true",
                       help="Format output tables using markdown table syntax")
+  parser.add_argument("--sort_per_game", "--pg", action="store_true",
+                      help="Sort by per-game +/- instead of total")
   parser.add_argument("-G", "--goal_weight", type=float, default=1,
                       help="Multiplier for goals")
   parser.add_argument("-A", "--assist_weight", type=float, default=1,
@@ -44,6 +50,10 @@ if __name__ == "__main__":
                       help="Multiplier for turns; usually negative")
   parser.add_argument("--bold_teams", nargs="+",
                       help="Teams to bold, e.g. as **team**")
+  parser.add_argument("--keep_teams", nargs="+",
+                      help="Teams to keep")
+  parser.add_argument("--skip_teams", nargs="+",
+                      help="Teams to skip")
   args = parser.parse_args()
 
   # rosters = {}
@@ -52,7 +62,10 @@ if __name__ == "__main__":
     genders = ["Men", "Mixed", "Women"] if args.level == "club" else ["Men", "Women"]
 
   for gender in genders:
-    report = usau.reports.USAUResults.from_nationals(year=args.year, level=args.level, gender=gender)
+    report = usau.reports.USAUResults.from_event(year=args.year,
+                                                 level=args.level,
+                                                 gender=gender,
+                                                 event=args.event)
     report.load_from_csvs(mandatory=False, write=True)
     roster = report.rosters
     roster["+/-"] = compute_plus_minus(roster,
@@ -73,10 +86,24 @@ if __name__ == "__main__":
                                        "Team Score", "Team Opp Score"]].sum()
     roster = roster.join(matches, on="Team")
     roster["+/- per Game"] = roster["+/-"] / roster["Team Games Played"]
+    roster["#Games"] = roster["Team Games Played"]
+
+    if args.keep_teams:
+      roster = roster.loc[roster["Team"].isin(args.keep_teams)].copy()
+    if args.skip_teams:
+      roster = roster.loc[~roster["Team"].isin(args.skip_teams)].copy()
 
     # Sort by +/-
-    res = roster.sort_values("+/-", ascending=False).reset_index(drop=True).head(args.num_players) \
-        [["No.", "Name", "Team", "Goals", "Assists", "Ds", "Turns", "+/-", "+/- per Game"]]
+    sort_column = "+/- per Game" if args.sort_per_game else "+/-"
+    res = (roster.sort_values(sort_column, ascending=False)
+                 .reset_index(drop=True)
+                 .head(args.num_players)
+                 [["Name", "Team",
+                   "Goals", "Assists", "Ds", "Turns",
+                   "+/-", "+/- per Game", "#Games"]]
+                 .rename(columns={"Goals": "Gs", "Assists": "As", "Turns": "Ts",
+                                  "+/- per Game": "+/-pg"})
+          )
     #     .style \
     #     .bar(subset=['Fantasy Score', 'Goals', 'Ds', '+/-'],
     #          color='rgba(80, 200, 100, 0.5)') \

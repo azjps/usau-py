@@ -89,6 +89,7 @@ class USAUResults(object):
   def event_soup(self):
     """BeautifulSoup-parsed HTML from tournament schedule page"""
     if self.event_page_soup is None:
+      print("Downloading from URL:", self.event_url)
       page = urllib.urlopen(self.event_url).read().decode('utf-8')
       self.event_page_soup = BeautifulSoup(page, "lxml")
     return self.event_page_soup
@@ -308,51 +309,154 @@ class USAUResults(object):
 
   @classmethod
   def from_nationals(cls, level, year, gender):
-    """Load competition results from human-readable strings
+    """Refer to :func:`from_event`"""
+    if level not in cls._NATIONALS_LEVELS:
+      raise ValueError("Unrecognized competition level {level}, choices: {choices}"
+                       .format(level=level, choices=_NATIONALS_LEVELS))
+    return cls.from_event(level=level, year=year, gender=gender,
+                          event="nationals")
+
+  @classmethod
+  def from_event(cls, level, year, gender, event="nationals"):
+    """Load competition results from human-readable string inputs
 
     Args:
         level (str): One of "club", "d1college", "d3college"
         year (int | str): 20xx
         gender (str): One of "Men", "Mixed", "Women"
     """
-    assert gender in ("Men", "Mixed", "Women"), "Unknown gender input: {gender}".format(gender=gender)
-    year = str(year)
-    if level.lower() == "club":
-      return cls("USA-Ultimate-National-Championships-" + year, gender)
-    elif level.lower() in ("d1college",):
-      if year == "2017":
-        # Permanent change in the URL?
-        return cls(year + "-USA-Ultimate-College-Championships", gender)
-      return cls("USA-Ultimate-D-I-College-Championships-" + year, gender)
-    elif level.lower() in ("d3college",):
-      return cls("USA-Ultimate-D-III-College-Championships-" + year, gender)
-    raise ValueError("Unrecognized competition level {level}, choices: {choices}"
-                     .format(level=level, choices=_NATIONALS_LEVELS))
+    assert gender in ("Men", "Mixed", "Women"), \
+        "Unknown gender input: {gender}".format(gender=gender)
+    year = int(year)
+    level = level.lower()
+    event = event.lower().replace('-', ' ').replace('_', ' ')
+    url = None
+    for event_info in cls._EVENT_TO_URL:
+      assert isinstance(event_info["event"], list)
+      start_year = event_info.get("start_year", None)
+      end_year = event_info.get("end_year", None)
+      if start_year is not None and year < start_year:
+        continue
+      if end_year is not None and year > end_year:
+        continue
+
+      if (level == event_info["level"] and
+          event in event_info["event"]):
+        url = event_info["url"]
+
+    if url is None:
+      raise ValueError("Unable to find USAU event for filter: "
+                       "level {level} year {year} event {event}"
+                       .format(level=level, year=year, event=event))
+
+    # TODO: fix this competition logic
+    competition = "College"
+    if level == "club":
+      competition = "Club"
+    return cls(url.format(y=year), gender, competition=competition)
 
   # Class members
   _NATIONALS_LEVELS = ["club", "d1college", "d3college"]
+  # below, start year and end year are inclusive!
+  _EVENT_TO_URL = \
+    [
+      {
+        "level": "club",
+        "event": ["nationals", "nats"],
+        "start_year": 2015,
+        "url": "USA-Ultimate-National-Championships-{y}",
+      },
+      {
+        "level": "d1college",
+        "event": ["nationals", "nats"],
+        "start_year": 2017,
+        "url": "{y}-USA-Ultimate-College-Championships",
+      },
+      {
+        "level": "d1college",
+        "event": ["nationals", "nats"],
+        "start_year": 2015,
+        "end_year": 2016,
+        "url": "USA-Ultimate-D-I-College-Championships-{y}",
+      },
+      {
+        "level": "d3college",
+        "event": ["nationals", "nats"],
+        "start_year": 2015,
+        "url": "USA-Ultimate-D-III-College-Championships-{y}",
+      },
+      {
+        "level": "club",
+        "event": ["us open"],
+        "start_year": 2017,
+        "url": "{y}-US-Open-Club-Championships",
+      },
+      {
+        "level": "club",
+        "event": ["tct pro", "pro flight", "pro champs"],
+        "start_year": 2017,
+        "url": "TCT-Pro-Championships-{y}",
+      },
+      {
+        "level": "club",
+        "event": ["tct pro", "pro flight", "pro champs"],
+        "start_year": 2015,
+        "end_year": 2016,
+        "url": "TCT-Pro-Flight-Finale-{y}",
+      },
+      {
+        "level": "club",
+        "event": ["tct pro", "pro flight", "pro champs"],
+        "start_year": 2017,
+        "url": "TCT-Pro-Championships-{y}",
+      },
+      {
+        "level": "club",
+        "event": ["tct pro", "pro flight", "pro champs"],
+        "start_year": 2015,
+        "end_year": 2016,
+        "url": "TCT-Pro-Flight-Finale-{y}",
+      },
+      {
+        "level": "club",
+        "event": ["tct select", "select flight"],
+        "start_year": 2016,
+        "url": "TCT-Select-Flight-Invite-{y}",
+      },
+    ]
 
 # For tab-completion convenience
-d1_college_nats_men_2014 = USAUResults("USA-Ultimate-D-I-College-Championships", "Men")
-d1_college_nats_women_2014 = USAUResults("USA-Ultimate-D-I-College-Championships", "Women")
-d3_college_nats_men_2014 = USAUResults("USA-Ultimate-D-III-College-Championships", "Men")
-d3_college_nats_women_2014 = USAUResults("USA-Ultimate-D-III-College-Championships", "Women")
-d1_college_nats_men_2015 = USAUResults("USA-Ultimate-D-I-College-Championships-2015", "Men")
-d1_college_nats_women_2015 = USAUResults("USA-Ultimate-D-I-College-Championships-2015", "Women")
-d3_college_nats_men_2015 = USAUResults("USA-Ultimate-D-III-College-Championships-2015", "Men")
-d3_college_nats_women_2015 = USAUResults("USA-Ultimate-D-III-College-Championships-2015", "Women")
-d1_college_nats_men_2016 = USAUResults("USA-Ultimate-D-I-College-Championships-2016", "Men")
-d1_college_nats_women_2016 = USAUResults("USA-Ultimate-D-I-College-Championships-2016", "Women")
-d3_college_nats_men_2016 = USAUResults("USA-Ultimate-D-III-College-Championships-2016", "Men")
-d3_college_nats_women_2016 = USAUResults("USA-Ultimate-D-III-College-Championships-2016", "Women")
-d1_college_nats_men_2017 = USAUResults("2017-USA-Ultimate-College-Championships", "Men")
-d1_college_nats_women_2017 = USAUResults("2017-USA-Ultimate-College-Championships", "Women")
-d3_college_nats_men_2017 = USAUResults("USA-Ultimate-D-III-College-Championships-2017", "Men")
-d3_college_nats_women_2017 = USAUResults("USA-Ultimate-D-III-College-Championships-2017", "Women")
+for level in ("d1college", "d3college", "club"):
+  for gender in ("Men", "Women", "Mixed"):
+    if gender == "Mixed" and level != "club":
+      continue
+    for year in range(2015, 2018):
+      key = ("{lvl}_nats_{gender}_{year}"
+             .format(lvl=level, gender=gender.lower(), year=year))
+      globals()[key] = USAUResults.from_event(level=level, gender=gender, year=year,
+                                              event="nationals")
 
-club_nats_men_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Men")
-club_nats_women_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Women")
-club_nats_mixed_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Mixed")
-club_nats_men_2016 = USAUResults("USA-Ultimate-National-Championships-2016", "Men")
-club_nats_women_2016 = USAUResults("USA-Ultimate-National-Championships-2016", "Women")
-club_nats_mixed_2016 = USAUResults("USA-Ultimate-National-Championships-2016", "Mixed")
+# TODO: have a better organization for this!
+# d1_college_nats_men_2014 = USAUResults("USA-Ultimate-D-I-College-Championships", "Men")
+# d1_college_nats_women_2014 = USAUResults("USA-Ultimate-D-I-College-Championships", "Women")
+# d3_college_nats_men_2014 = USAUResults("USA-Ultimate-D-III-College-Championships", "Men")
+# d3_college_nats_women_2014 = USAUResults("USA-Ultimate-D-III-College-Championships", "Women")
+# d1_college_nats_men_2015 = USAUResults("USA-Ultimate-D-I-College-Championships-2015", "Men")
+# d1_college_nats_women_2015 = USAUResults("USA-Ultimate-D-I-College-Championships-2015", "Women")
+# d3_college_nats_men_2015 = USAUResults("USA-Ultimate-D-III-College-Championships-2015", "Men")
+# d3_college_nats_women_2015 = USAUResults("USA-Ultimate-D-III-College-Championships-2015", "Women")
+# d1_college_nats_men_2016 = USAUResults("USA-Ultimate-D-I-College-Championships-2016", "Men")
+# d1_college_nats_women_2016 = USAUResults("USA-Ultimate-D-I-College-Championships-2016", "Women")
+# d3_college_nats_men_2016 = USAUResults("USA-Ultimate-D-III-College-Championships-2016", "Men")
+# d3_college_nats_women_2016 = USAUResults("USA-Ultimate-D-III-College-Championships-2016", "Women")
+# d1_college_nats_men_2017 = USAUResults("2017-USA-Ultimate-College-Championships", "Men")
+# d1_college_nats_women_2017 = USAUResults("2017-USA-Ultimate-College-Championships", "Women")
+# d3_college_nats_men_2017 = USAUResults("USA-Ultimate-D-III-College-Championships-2017", "Men")
+# d3_college_nats_women_2017 = USAUResults("USA-Ultimate-D-III-College-Championships-2017", "Women")
+# 
+# club_nats_men_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Men")
+# club_nats_women_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Women")
+# club_nats_mixed_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Mixed")
+# club_nats_men_2016 = USAUResults("USA-Ultimate-National-Championships-2016", "Men")
+# club_nats_women_2016 = USAUResults("USA-Ultimate-National-Championships-2016", "Women")
+# club_nats_mixed_2016 = USAUResults("USA-Ultimate-National-Championships-2016", "Mixed")
