@@ -8,6 +8,7 @@ from collections import OrderedDict
 import logging
 import os
 import re
+import sys
 
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -45,18 +46,27 @@ class USAUResults(object):
     """Container and helpers for accessing player statistics on USAU website"""
     BASE_URL = "http://play.usaultimate.org"
 
-    def __init__(self, event, gender, competition="College", executor=None):
-        assert isinstance(event, string_types) and isinstance(
-            gender, string_types)
-        self.event = event
+    def __init__(self, event_info, gender, year,
+                 executor=None):
+        assert gender in self.__class__._GENDERS
+        self.event_info = event_info
         self.gender = gender
-        self.competition = competition
+        self.year = year
+        self.event_full = event_info["url"].format(y=year)
+        # TODO: flesh out competition parser?
+        self.competition = ("College" if "college" in self.event_info["level"]
+                            else "Club")
 
-        self.event_url = ("{url}/events/{evt}/schedule/{gender}/{comp}-{gender}"
-                          .format(url=self.BASE_URL,
-                                  evt=event,
-                                  comp=competition,
-                                  gender=gender))
+        if "full_url" in event_info:
+            self.event_url = event_info["full_url"]
+        else:
+            self.event_url = ("{url}/events/{evt}/schedule/"
+                              "{gender}/{comp}-{gender}"
+                              .format(url=self.BASE_URL,
+                                      evt=self.event_full,
+                                      comp=self.competition,
+                                      gender=self.gender))
+
         self.event_page_soup = None
         self.roster_dfs = None
         self.match_report_dfs = None
@@ -69,10 +79,18 @@ class USAUResults(object):
         return repr(self)
 
     def __repr__(self):
-        return ("USAUResults<{event}, {comp}, {gender}>"
-                .format(event=self.event,
-                        comp=self.competition,
-                        gender=self.gender))
+        return ("USAUResults<{name}>"
+                .format(name=self._name()))
+
+    def _name(self):
+        event = self.event_info["event"][0].replace(' ', '-')
+        name = ("{year}_{level}_{event}_{gender}"
+                .format(year=self.year,
+                        level=self.event_info["level"],
+                        event=event,
+                        gender=self.gender,
+                        ))
+        return name
 
     def set_executor(self, mode, max_workers=4):
         if mode == "thread":
@@ -88,15 +106,19 @@ class USAUResults(object):
             data_dir = os.path.join(os.path.dirname(
                 os.path.abspath(__file__)), "data")
         assert isinstance(data_dir, string_types)
-        base_path = os.path.join(os.path.expanduser(
-            data_dir), self.event + "-" + self.gender)
 
-        self.rosters.to_csv(base_path + "-Rosters.csv", encoding=encoding)
+        # TODO: put in subfolders instead?
+        base_path = os.path.join(os.path.expanduser(data_dir),
+                                 self._name())
+
+        self.rosters.to_csv(
+            base_path + "_rosters.csv", encoding=encoding)
         self.match_reports.to_csv(
-            base_path + "-Match-Reports.csv", encoding=encoding)
+            base_path + "_match_reports.csv", encoding=encoding)
         self.match_results.to_csv(
-            base_path + "-Match-Results.csv", encoding=encoding)
-        # self.score_progressions.to_csv(base_path + "-Scores.csv")
+            base_path + "_match_results.csv", encoding=encoding)
+        self.score_progressions.to_csv(
+            base_path + "_scores.csv", encoding=encoding)
 
         print("Finished writing CSVs to {data_dir}".format(data_dir=data_dir))
 
@@ -106,16 +128,18 @@ class USAUResults(object):
             data_dir = os.path.join(os.path.dirname(
                 os.path.abspath(__file__)), "data")
         assert isinstance(data_dir, string_types)
-        base_path = os.path.join(os.path.expanduser(
-            data_dir), self.event + "-" + self.gender)
+        base_path = os.path.join(os.path.expanduser(data_dir),
+                                 self._name())
 
         try:
-            self.roster_dfs = pd.read_csv(base_path + "-Rosters.csv")
+            self.roster_dfs = pd.read_csv(
+                base_path + "_rosters.csv")
             self.match_report_dfs = pd.read_csv(
-                base_path + "-Match-Reports.csv")
+                base_path + "_match_reports.csv")
             self.match_result_dfs = pd.read_csv(
-                base_path + "-Match-Results.csv")
-            # self.score_progression_dfs = pd.read_csv(base_path + "-Scores.csv")
+                base_path + "_match_results.csv")
+            self.score_progression_dfs = pd.read_csv(
+                base_path + "_scores.csv")
         except IOError:
             print("Unable to open downloaded CSVs at {path}"
                   .format(path=base_path))
@@ -126,9 +150,10 @@ class USAUResults(object):
         return self
 
     @classmethod
-    def from_csvs(cls, event, gender, data_dir=None):
+    def from_csvs(cls, data_dir=None, *args, **kwargs):
         """Constructor from offline csv data"""
-        return cls(event, gender).load_from_csvs(data_dir=data_dir)
+        return (cls.from_event(*args, **kwargs)
+                   .load_from_csvs(data_dir=data_dir))
 
     @property
     def event_soup(self):
@@ -260,9 +285,39 @@ class USAUResults(object):
         away_total_score = cls.split_total_score(away_total_score)
 
         # Cleanup score progressions
-        # scores.iloc[0] = 0
-        # scores = scores[:-1].dropna(how='all').fillna(0).diff()[1:]
-        # Dataframes of 1 for score, 0 for lose
+        scores.iloc[0] = 0
+        scores = scores[:-1].dropna(how='all').fillna(0).astype(int)
+        if scores.iloc[-1].sum() < home_total_score + away_total_score:
+            if scores.iloc[-1].sum() == home_total_score + away_total_score - 1:
+                # Some data entry omits the final point
+                # TODO: do full consistency check for these?
+                scores = scores.append({0: home_total_score,
+                                        1: away_total_score}, ignore_index=True)
+            else:
+                error_message = ("In {url} score progression is not complete: "
+                                 "final scores {score} mismatch {home}-{away}"
+                                 .format(url=url,
+                                         home=home_total_score,
+                                         away=away_total_score,
+                                         score=scores.iloc[-1].values))
+                _logger.warn(error_message)
+                print(error_message, file=sys.stderr)
+
+        # To get the point winners, with 1 for score:
+        # scores.diff()[1:].astype(int)
+        # Adjoin context. Using lower_case column names since this
+        # should just be for internal reading.
+        scores.columns = ["home_score", "away_score"]
+        scores["url"] = url
+        scores["home_team"] = home_name
+        scores["away_team"] = away_name
+        scores["home_seed"] = home_seed
+        scores["away_seed"] = away_seed
+        # Including these two columns only for data integrity reasons:
+        # on many score reports the score progressions don't match
+        # the final scores!
+        scores["home_final_score"] = home_total_score
+        scores["away_final_score"] = away_total_score
 
         # "Players" search string may also pick up sidebar, unfortunately
         # Since the G D A T is in a <tr>, need to give header= explicitly.
@@ -296,6 +351,8 @@ class USAUResults(object):
             "Opponent": away_name,
             "Score": home_total_score,
             "Opp Score": away_total_score,
+            "Seed": home_seed,
+            "Opp Seed": away_seed,
             "Gs": sum(home_roster.Goals),
             "As": sum(home_roster.Assists),
             "Ds": sum(home_roster.Ds),
@@ -306,6 +363,8 @@ class USAUResults(object):
             "Opponent": home_name,
             "Score": away_total_score,
             "Opp Score": home_total_score,
+            "Seed": away_seed,
+            "Opp Seed": home_seed,
             "Gs": sum(away_roster.Goals),
             "As": sum(away_roster.Assists),
             "Ds": sum(away_roster.Ds),
@@ -355,6 +414,7 @@ class USAUResults(object):
 
         self.match_report_dfs = pd.concat(match_reports)
         self.match_result_dfs = pd.concat(match_results)
+        self.score_progression_dfs = pd.concat(score_progressions)
         return self.match_report_dfs
 
     @property
@@ -362,6 +422,12 @@ class USAUResults(object):
         """Returns pd.DataFrame of final score for each match"""
         _ = self.match_reports
         return self.match_result_dfs
+
+    @property
+    def score_progressions(self):
+        """Returns pd.DataFrame of point-per-point scores for each match"""
+        _ = self.match_reports
+        return self.score_progression_dfs
 
     @property
     def missing_tallies(self):
@@ -392,6 +458,32 @@ class USAUResults(object):
         return memoize_read_html(url, match=match, header=header)
 
     @classmethod
+    def from_url(cls, url, level=None, event=None, **kwargs):
+        """Convenience method for loading directly from tournament page URL
+
+        This is not advised; prefer to use :func:`from_event` instead.
+        """
+        # Try to deduce metadata from url
+        tokens = url.split('/')
+        # Expecting URL of form:
+        # "{url}/events/{evt}/schedule/{gender}/{comp}-{gender}"
+        assert tokens[-3] == "schedule"
+        if tokens[-2].lower() not in cls._GENDERS:
+            raise ValueError("Unable to deduce gender from url: {url}"
+                             .format(url=url))
+        event_full = tokens[-4]
+        year = re.match(r"\d{4}", event_full).group(0)
+        competition, gender = tokens[-1].split("-")
+        if level is None:
+          level = "college" if "college" in competition.lower() else "club"
+        assert gender == tokens[-2]
+        return cls({"full_url": url,
+                    "url": event_full,
+                    "event": event or event_full,  # TODO: parse event_full?
+                    "level": level,
+                   }, gender=gender, year=year)
+
+    @classmethod
     def from_nationals(cls, level, year, gender):
         """Refer to :func:`from_event`"""
         if level not in cls._NATIONALS_LEVELS:
@@ -401,7 +493,8 @@ class USAUResults(object):
                               event="nationals")
 
     @classmethod
-    def from_event(cls, level, year, gender, event="nationals"):
+    def from_event(cls, level, year, gender, event="nationals",
+                   **kwargs):
         """Load competition results from human-readable string inputs
 
         Args:
@@ -409,12 +502,20 @@ class USAUResults(object):
             year (int | str): 20xx
             gender (str): One of "Men", "Mixed", "Women"
         """
-        assert gender in ("Men", "Mixed", "Women"), \
-            "Unknown gender input: {gender}".format(gender=gender)
         year = int(year)
         level = level.lower()
         event = event.lower().replace('-', ' ').replace('_', ' ')
-        url = None
+        gender = gender.lower()
+        if gender not in cls._GENDERS:
+            raise ValueError("Unknown gender input: {gender}"
+                             .format(gender=gender))
+        if level.lower() not in cls._NATIONALS_LEVELS:
+            raise ValueError("Unknown competition level: {level}; "
+                             "expected one of {choices}"
+                             .format(level=level,
+                                     choices=cls._NATIONALS_LEVELS))
+
+        event_info_found = None
         for event_info in cls._EVENT_TO_URL:
             assert isinstance(event_info["event"], list)
             start_year = event_info.get("start_year", None)
@@ -426,21 +527,19 @@ class USAUResults(object):
 
             if (level == event_info["level"] and
                     event in event_info["event"]):
-                url = event_info["url"]
+                event_info_found = event_info
+                break
 
-        if url is None:
+        if event_info_found is None:
             raise ValueError("Unable to find USAU event for filter: "
                              "level {level} year {year} event {event}"
                              .format(level=level, year=year, event=event))
 
-        # TODO: fix this competition logic
-        competition = "College"
-        if level == "club":
-            competition = "Club"
-        return cls(url.format(y=year), gender, competition=competition)
+        return cls(event_info, gender=gender, year=year, **kwargs)
 
     # Class members
     _NATIONALS_LEVELS = ["club", "d1college", "d3college"]
+    _GENDERS = ["men", "mixed", "women"]
     # below, start year and end year are inclusive!
     _EVENT_TO_URL = \
         [
@@ -496,19 +595,11 @@ class USAUResults(object):
             },
             {
                 "level": "club",
-                "event": ["tct pro", "pro flight", "pro champs"],
-                "start_year": 2015,
-                "end_year": 2016,
-                "url": "TCT-Pro-Flight-Finale-{y}",
-            },
-            {
-                "level": "club",
                 "event": ["tct select", "select flight"],
                 "start_year": 2016,
                 "url": "TCT-Select-Flight-Invite-{y}",
             },
         ]
-
 
 # For tab-completion convenience
 for level in ("d1college", "d3college", "club"):
