@@ -14,6 +14,7 @@ import pandas as pd
 left_rule = {'<': ':', '^': ':', '>': '-'}
 right_rule = {'<': '-', '^': ':', '>': ':'}
 
+
 def evaluate_field(record, field_spec, float_format=None):
     """Evaluate a field of a record using the type of the field_spec as a guide.
 
@@ -22,14 +23,16 @@ def evaluate_field(record, field_spec, float_format=None):
     if type(field_spec) is int:
         value = record[field_spec]
         if isinstance(value, float):
-          float_format = float_format or pd.get_option('display.float_format')
-          if float_format is not None:
-            return float_format(value)
+            float_format = float_format or pd.get_option(
+                'display.float_format')
+            if float_format is not None:
+                return float_format(value)
         return str(value)
     elif type(field_spec) is str:
         return str(getattr(record, field_spec))
     else:
         return str(field_spec(record))
+
 
 def to_markdown(records, fields, headings, alignment=None, float_format=None):
     """Generate a Doxygen-flavor Markdown table from records.
@@ -62,7 +65,8 @@ def to_markdown(records, fields, headings, alignment=None, float_format=None):
     columns = [[] for i in range(num_columns)]
     for record in records:
         for i, field in enumerate(fields):
-            columns[i].append(evaluate_field(record, field, float_format=float_format))
+            columns[i].append(evaluate_field(
+                record, field, float_format=float_format))
 
     # Fill out any missing alignment characters.
     extended_align = alignment if alignment != None else []
@@ -70,7 +74,7 @@ def to_markdown(records, fields, headings, alignment=None, float_format=None):
         extended_align = extended_align[0:num_columns]
     elif len(extended_align) < num_columns:
         extended_align += [('^', '<')
-                           for i in range(num_columns-len(extended_align))]
+                           for i in range(num_columns - len(extended_align))]
 
     heading_align, cell_align = [x for x in zip(*extended_align)]
 
@@ -86,7 +90,7 @@ def to_markdown(records, fields, headings, alignment=None, float_format=None):
                     for a, w in zip(cell_align, column_widths)])
     row_template = '| ' + _ + ' |'
 
-    _ = ' | '.join([left_rule[a] + '-'*(w-2) + right_rule[a]
+    _ = ' | '.join([left_rule[a] + '-' * (w - 2) + right_rule[a]
                     for a, w in zip(cell_align, column_widths)])
     ruling = '| ' + _ + ' |'
 
@@ -97,15 +101,17 @@ def to_markdown(records, fields, headings, alignment=None, float_format=None):
         ret += (row_template.format(*row).rstrip() + '\n')
     return ret
 
+
 def pandas_to_markdown(frame, alignment=None):
-  """Convert a pandas dataframe to markdown"""
-  return to_markdown(frame.values, list(range(len(frame.columns))), frame.columns,
-                     alignment=alignment)
+    """Convert a pandas dataframe to markdown"""
+    return to_markdown(frame.values, list(range(len(frame.columns))), frame.columns,
+                       alignment=alignment)
+
 
 def display(frame, use_markdown=True):
-  """Display as a HTML table in jupyter or as a markdown-formatted text table"""
-  if use_markdown:
-    print(pandas_to_markdown(frame))
-  else:
-    import IPython.display
-    IPython.display.display(frame)
+    """Display as a HTML table in jupyter or as a markdown-formatted text table"""
+    if use_markdown:
+        print(pandas_to_markdown(frame))
+    else:
+        import IPython.display
+        IPython.display.display(frame)
