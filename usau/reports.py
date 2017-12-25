@@ -5,12 +5,16 @@ Load and clean player/team tournament data from play.usaultimate.org.
 from __future__ import print_function
 
 from collections import OrderedDict
+import logging
 import os
 import re
-import urllib
 
 from bs4 import BeautifulSoup
 import pandas as pd
+import requests
+from six import string_types  # py2/3 compat
+
+_logger = logging.getLogger(__name__)
 
 _table_cache = {}
 def memoize_read_html(url, match, header):
@@ -27,12 +31,18 @@ def title_name(name):
     return name.title()
   return name  # Leave capitalizations in middle of names, like 'McCray'
 
+class PickleSoup(object):
+    """Minor helper for pickling a few pieces of a BeautifulSoup object"""
+    def __init__(self, soup):
+        self.attrs = dict(soup.attrs)
+        self.text = soup.text
+
 class USAUResults(object):
   """Container and helpers for accessing player statistics on USAU website"""
   BASE_URL = "http://play.usaultimate.org"
 
-  def __init__(self, event, gender, competition="College"):
-    assert isinstance(event, basestring) and isinstance(gender, basestring)
+  def __init__(self, event, gender, competition="College", executor=None):
+    assert isinstance(event, string_types) and isinstance(gender, string_types)
     self.event = event
     self.gender = gender
     self.competition = competition
@@ -44,12 +54,31 @@ class USAUResults(object):
     self.match_report_dfs = None
     self.match_result_dfs = None
     self.score_progression_dfs = None
+    self.executor = executor
+
+  def __str__(self):
+      # TODO:
+      return repr(self)
+
+  def __repr__(self):
+      return ("USAUResults<{event}, {comp}, {gender}>"
+              .format(event=self.event,
+                      comp=self.competition,
+                      gender=self.gender))
+
+  def set_executor(self, mode, max_workers=4):
+    if mode == "thread":
+      from concurrent.futures import ThreadPoolExecutor
+      self.executor = ThreadPoolExecutor(max_workers=max_workers)
+    elif mode == "process":
+      from concurrent.futures import ProcessPoolExecutor
+      self.executor = ProcessPoolExecutor(max_workers=max_workers)
 
   def to_csvs(self, data_dir=None, encoding='utf-8'):
     """Write data to given directory in the form of csv files"""
     if data_dir is None:
       data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-    assert isinstance(data_dir, basestring)
+    assert isinstance(data_dir, string_types)
     base_path = os.path.join(os.path.expanduser(data_dir), self.event + "-" + self.gender)
 
     self.rosters.to_csv(base_path + "-Rosters.csv", encoding=encoding)
@@ -63,7 +92,7 @@ class USAUResults(object):
     """Load data from offline csv files"""
     if data_dir is None:
       data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-    assert isinstance(data_dir, basestring)
+    assert isinstance(data_dir, string_types)
     base_path = os.path.join(os.path.expanduser(data_dir), self.event + "-" + self.gender)
 
     try:
@@ -89,10 +118,27 @@ class USAUResults(object):
   def event_soup(self):
     """BeautifulSoup-parsed HTML from tournament schedule page"""
     if self.event_page_soup is None:
-      print("Downloading from URL:", self.event_url)
-      page = urllib.urlopen(self.event_url).read().decode('utf-8')
-      self.event_page_soup = BeautifulSoup(page, "lxml")
+      # print("Downloading from URL: {url}".format(url=self.event_url))
+      _logger.info("Downloading from URL: {url}".format(url=self.event_url))
+      # page = urllib.urlopen(self.event_url).read().decode('utf-8')
+      request = requests.get(self.event_url)
+      self.event_page_soup = BeautifulSoup(request.text, "lxml")
     return self.event_page_soup
+
+  @classmethod
+  def _scrape_roster(cls, team_link, verbose=True):
+    """Read overall roster statistics from given URL"""
+    url = team_link.attrs["href"]
+    team = team_link.text
+    if verbose:
+      print("Reading roster from url: {url}".format(url=url))
+    name, seed = cls.split_team_seed(team)
+    # Match tables containing 'Position', i.e. cutter/handler
+    roster_table = cls.get_html_tables(url, match="Position")[0]
+    roster_table["url"] = url
+    roster_table["Team"] = name
+    roster_table["Seed"] = seed
+    return roster_table
 
   @property
   def rosters(self):
@@ -107,20 +153,18 @@ class USAUResults(object):
     team_links = []
     for pool in self.event_soup.findAll("div", attrs={"class": "pool"}):
       team_links += pool.findAll("a", attrs={"href": re.compile("EventTeamId")})
+    # NOTE: beautifulsoup objects are not pickle-able
+    team_links = [PickleSoup(l) for l in team_links]
 
-    roster_dfs = []
-    # This is trivially parallelizable, but since we have data cached in csvs
-    # don't really need to worry about speeding this up.
-    for team_link in team_links:
-      url = team_link.attrs["href"]
-      name, seed = self.split_team_seed(team_link.text)
-      # Match tables containing 'Position', i.e. cutter/handler
-      roster_table = self.get_html_tables(url, match="Position")[0]
-      roster_table["url"] = url
-      roster_table["Team"] = name
-      roster_table["Seed"] = seed
-      roster_dfs.append(roster_table)
-    self.roster_dfs = pd.concat(roster_dfs)
+    _logger.info("For {event} reading {n} rosters"
+                 .format(event=self, n=len(team_links)))
+    if self.executor is None:  # Run serially
+      rosters = [self._scrape_roster(link) for link in team_links]
+    else:
+      rosters = list(self.executor.map(self.__class__._scrape_roster,
+                                       team_links,
+                                       chunksize=5))
+    self.roster_dfs = pd.concat(rosters)
 
     # idempotent
     self.roster_dfs["Name"] = self.roster_dfs["Name"].apply(title_name)
@@ -174,6 +218,82 @@ class USAUResults(object):
     table.drop(["Players", "G", "A", "D", "T"], inplace=True, axis=1)
     return table
 
+  @classmethod
+  def _scrape_match(cls, url, verbose=True):
+            print("Reading match report from url: {url}".format(url=url))
+            # Score-line, i.e. 1-0 1-1 1-2 1-3 2-3
+            scores = cls.get_html_tables(url, match="Total:")[0].T
+            assert len(scores.columns) == 2
+            home_team, away_team = scores.iloc[0]
+            if home_team == "TBD" and away_team == "TBD":
+              # See for example the consolation game b/w Cincinnati and Illinois in D-I Men's 2015,
+              # which links to the following empty match report
+              # http://play.usaultimate.org/teams/events/match_report/?
+              # EventGameId=tu5uM3hYbU6FDLJw%2byP1b33zbjMeXu%2bbIJiyiqteRbo%3d
+              _logger.warning("Empty or malformed match report: {url}"
+                              .format(url=cls.BASE_URL + url))
+              return
+            home_name, home_seed = cls.split_team_seed(home_team)
+            away_name, away_seed = cls.split_team_seed(away_team)
+            home_total_score, away_total_score = scores.iloc[-1]
+            home_total_score = cls.split_total_score(home_total_score)
+            away_total_score = cls.split_total_score(away_total_score)
+
+            # Cleanup score progressions
+            # scores.iloc[0] = 0
+            # scores = scores[:-1].dropna(how='all').fillna(0).diff()[1:]
+            # Dataframes of 1 for score, 0 for lose
+
+            # "Players" search string may also pick up sidebar, unfortunately
+            # Since the G D A T is in a <tr>, need to give header= explicitly.
+            home_roster, away_roster = cls.get_html_tables(url, match="Players", header=0)[0:2]
+            home_roster = cls.clean_match_report_stats(home_roster)
+            away_roster = cls.clean_match_report_stats(away_roster)
+
+            # Attach metadata for context with the players statistics
+            # This can be determined by joining with the match_results table also,
+            # by joining on url, but we'll offer these fields for convenience, since
+            # there isn't much data to save anyway.
+            home_roster["url"] = url
+            away_roster["url"] = url
+            home_roster["Team"] = home_name
+            away_roster["Team"] = away_name
+            home_roster["Seed"] = home_seed
+            away_roster["Seed"] = away_seed
+            home_roster["Score"] = home_total_score
+            away_roster["Score"] = away_total_score
+            home_roster["Opp Team"] = away_name
+            away_roster["Opp Team"] = home_name
+            home_roster["Opp Seed"] = away_seed
+            away_roster["Opp Seed"] = home_seed
+            home_roster["Opp Score"] = away_total_score
+            away_roster["Opp Score"] = home_total_score
+
+            match_results = pd.DataFrame([{
+                "url": url,
+                "Team": home_name,
+                "Opponent": away_name,
+                "Score": home_total_score,
+                "Opp Score": away_total_score,
+                "Gs": sum(home_roster.Goals),
+                "As": sum(home_roster.Assists),
+                "Ds": sum(home_roster.Ds),
+                "Ts": sum(home_roster.Turns),
+                }, {
+                "url": url,
+                "Team": away_name,
+                "Opponent": home_name,
+                "Score": away_total_score,
+                "Opp Score": home_total_score,
+                "Gs": sum(away_roster.Goals),
+                "As": sum(away_roster.Assists),
+                "Ds": sum(away_roster.Ds),
+                "Ts": sum(away_roster.Turns),
+                }])
+            return (match_results,
+                    pd.concat([home_roster, away_roster]),
+                    scores)
+
   @property
   def match_reports(self):
     """Retrieve USAU match reports
@@ -188,91 +308,114 @@ class USAUResults(object):
 
     match_links = self.event_soup.findAll("a", attrs={"href": re.compile("EventGameId")})
 
+    # NOTE: sometimes scraper can pick up duplicate URLs, so make sure
+    # to unique-ify the URL set.
+    urls = set([link.attrs["href"] for link in match_links])
+    _logger.info("For {event} reading {n} reports"
+                 .format(event=self, n=len(urls)))
+    if self.executor is None:
+        scrapes = [self._scrape_match(url) for url in urls]
+    else:
+        scrapes = self.executor.map(self.__class__._scrape_match,
+                                    urls,
+                                    chunksize=5)
+
     match_results = []  # Scores, broken down by player contributions
     match_reports = []  # Just the final scores
     score_progressions = []
-    # This is trivially parallelizable, but since we have data cached in csvs
-    # don't really need to worry about speeding this up.
-    # NOTE: sometimes scraper can pick up duplicate URLs, so make sure
-    # to unique-ify the URL set.
-    for url in set([link.attrs["href"] for link in match_links]):
-      # Score-line, i.e. 1-0 1-1 1-2 1-3 2-3
-      scores = self.get_html_tables(url, match="Total:")[0].T
-      assert len(scores.columns) == 2
-      home_team, away_team = scores.iloc[0]
-      if home_team == "TBD" and away_team == "TBD":
-        # See for example the consolation game b/w Cincinnati and Illinois in D-I Men's 2015,
-        # which links to the following empty match report
-        # http://play.usaultimate.org/teams/events/match_report/?
-        # EventGameId=tu5uM3hYbU6FDLJw%2byP1b33zbjMeXu%2bbIJiyiqteRbo%3d
-        print("Empty or malformed match report:", self.BASE_URL + url)
-        continue
-      home_name, home_seed = self.split_team_seed(home_team)
-      away_name, away_seed = self.split_team_seed(away_team)
-      home_total_score, away_total_score = scores.iloc[-1]
-      home_total_score = self.split_total_score(home_total_score)
-      away_total_score = self.split_total_score(away_total_score)
-
-      # Cleanup score progressions
-      # scores.iloc[0] = 0
-      # scores = scores[:-1].dropna(how='all').fillna(0).diff()[1:]
-      # Dataframes of 1 for score, 0 for lose
-
-      # "Players" search string may also pick up sidebar, unfortunately
-      # Since the G D A T is in a <tr>, need to give header= explicitly.
-      home_roster, away_roster = self.get_html_tables(url, match="Players", header=0)[0:2]
-      home_roster = self.clean_match_report_stats(home_roster)
-      away_roster = self.clean_match_report_stats(away_roster)
-
-      # Attach metadata for context with the players statistics
-      # This can be determined by joining with the match_results table also,
-      # by joining on url, but we'll offer these fields for convenience, since
-      # there isn't much data to save anyway.
-      home_roster["url"] = url
-      away_roster["url"] = url
-      home_roster["Team"] = home_name
-      away_roster["Team"] = away_name
-      home_roster["Seed"] = home_seed
-      away_roster["Seed"] = away_seed
-      home_roster["Score"] = home_total_score
-      away_roster["Score"] = away_total_score
-      home_roster["Opp Team"] = away_name
-      away_roster["Opp Team"] = home_name
-      home_roster["Opp Seed"] = away_seed
-      away_roster["Opp Seed"] = home_seed
-      home_roster["Opp Score"] = away_total_score
-      away_roster["Opp Score"] = home_total_score
-
-      match_results.append({
-          "url": url,
-          "Team": home_name,
-          "Opponent": away_name,
-          "Score": home_total_score,
-          "Opp Score": away_total_score,
-          "Gs": sum(home_roster.Goals),
-          "As": sum(home_roster.Assists),
-          "Ds": sum(home_roster.Ds),
-          "Ts": sum(home_roster.Turns),
-          })
-      match_results.append({
-          "url": url,
-          "Team": away_name,
-          "Opponent": home_name,
-          "Score": away_total_score,
-          "Opp Score": home_total_score,
-          "Gs": sum(away_roster.Goals),
-          "As": sum(away_roster.Assists),
-          "Ds": sum(away_roster.Ds),
-          "Ts": sum(away_roster.Turns),
-          })
-
-      match_reports.append(home_roster)
-      match_reports.append(away_roster)
-      score_progressions.append(scores)
+    for scraped in scrapes:
+        if scraped is None:
+            continue
+        match_result, match_report, score_progression = scraped
+        match_results.append(match_result)
+        match_reports.append(match_report)
+        score_progressions.append(score_progression)
 
     self.match_report_dfs = pd.concat(match_reports)
-    self.match_result_dfs = pd.DataFrame(match_results)
+    self.match_result_dfs = pd.concat(match_results)
     return self.match_report_dfs
+
+    # NOTE: sometimes scraper can pick up duplicate URLs, so make sure
+    # to unique-ify the URL set.
+    # for url in set([link.attrs["href"] for link in match_links]):
+    #   # Score-line, i.e. 1-0 1-1 1-2 1-3 2-3
+    #   scores = self.get_html_tables(url, match="Total:")[0].T
+    #   assert len(scores.columns) == 2
+    #   home_team, away_team = scores.iloc[0]
+    #   if home_team == "TBD" and away_team == "TBD":
+    #     # See for example the consolation game b/w Cincinnati and Illinois in D-I Men's 2015,
+    #     # which links to the following empty match report
+    #     # http://play.usaultimate.org/teams/events/match_report/?
+    #     # EventGameId=tu5uM3hYbU6FDLJw%2byP1b33zbjMeXu%2bbIJiyiqteRbo%3d
+    #     _logger.warning("Empty or malformed match report: {url}"
+    #                     .format(url=self.BASE_URL + url))
+    #     continue
+    #   home_name, home_seed = self.split_team_seed(home_team)
+    #   away_name, away_seed = self.split_team_seed(away_team)
+    #   home_total_score, away_total_score = scores.iloc[-1]
+    #   home_total_score = self.split_total_score(home_total_score)
+    #   away_total_score = self.split_total_score(away_total_score)
+
+    #   # Cleanup score progressions
+    #   # scores.iloc[0] = 0
+    #   # scores = scores[:-1].dropna(how='all').fillna(0).diff()[1:]
+    #   # Dataframes of 1 for score, 0 for lose
+
+    #   # "Players" search string may also pick up sidebar, unfortunately
+    #   # Since the G D A T is in a <tr>, need to give header= explicitly.
+    #   home_roster, away_roster = self.get_html_tables(url, match="Players", header=0)[0:2]
+    #   home_roster = self.clean_match_report_stats(home_roster)
+    #   away_roster = self.clean_match_report_stats(away_roster)
+
+    #   # Attach metadata for context with the players statistics
+    #   # This can be determined by joining with the match_results table also,
+    #   # by joining on url, but we'll offer these fields for convenience, since
+    #   # there isn't much data to save anyway.
+    #   home_roster["url"] = url
+    #   away_roster["url"] = url
+    #   home_roster["Team"] = home_name
+    #   away_roster["Team"] = away_name
+    #   home_roster["Seed"] = home_seed
+    #   away_roster["Seed"] = away_seed
+    #   home_roster["Score"] = home_total_score
+    #   away_roster["Score"] = away_total_score
+    #   home_roster["Opp Team"] = away_name
+    #   away_roster["Opp Team"] = home_name
+    #   home_roster["Opp Seed"] = away_seed
+    #   away_roster["Opp Seed"] = home_seed
+    #   home_roster["Opp Score"] = away_total_score
+    #   away_roster["Opp Score"] = home_total_score
+
+    #   match_results.append({
+    #       "url": url,
+    #       "Team": home_name,
+    #       "Opponent": away_name,
+    #       "Score": home_total_score,
+    #       "Opp Score": away_total_score,
+    #       "Gs": sum(home_roster.Goals),
+    #       "As": sum(home_roster.Assists),
+    #       "Ds": sum(home_roster.Ds),
+    #       "Ts": sum(home_roster.Turns),
+    #       })
+    #   match_results.append({
+    #       "url": url,
+    #       "Team": away_name,
+    #       "Opponent": home_name,
+    #       "Score": away_total_score,
+    #       "Opp Score": home_total_score,
+    #       "Gs": sum(away_roster.Goals),
+    #       "As": sum(away_roster.Assists),
+    #       "Ds": sum(away_roster.Ds),
+    #       "Ts": sum(away_roster.Turns),
+    #       })
+
+    #   match_reports.append(home_roster)
+    #   match_reports.append(away_roster)
+    #   score_progressions.append(scores)
+
+    # self.match_report_dfs = pd.concat(match_reports)
+    # self.match_result_dfs = pd.DataFrame(match_results)
+    # return self.match_report_dfs
 
   @property
   def match_results(self):
@@ -453,7 +596,7 @@ for level in ("d1college", "d3college", "club"):
 # d1_college_nats_women_2017 = USAUResults("2017-USA-Ultimate-College-Championships", "Women")
 # d3_college_nats_men_2017 = USAUResults("USA-Ultimate-D-III-College-Championships-2017", "Men")
 # d3_college_nats_women_2017 = USAUResults("USA-Ultimate-D-III-College-Championships-2017", "Women")
-# 
+#
 # club_nats_men_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Men")
 # club_nats_women_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Women")
 # club_nats_mixed_2015 = USAUResults("USA-Ultimate-National-Championships-2015", "Mixed")
