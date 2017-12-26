@@ -546,6 +546,13 @@ class USAUResults(object):
             {
                 "level": "club",
                 "event": ["nationals", "nats"],
+                "start_year": 2014,
+                "end_year": 2014,
+                "url": "USA-Ultimate-National-Championships",
+            },
+            {
+                "level": "club",
+                "event": ["nationals", "nats"],
                 "start_year": 2015,
                 "url": "USA-Ultimate-National-Championships-{y}",
             },
@@ -576,6 +583,13 @@ class USAUResults(object):
             },
             {
                 "level": "club",
+                "event": ["us open"],
+                "start_year": 2015,
+                "end_year": 2016,
+                "url": "US-Open-Ultimate-Championships-{y}",
+            },
+            {
+                "level": "club",
                 "event": ["tct pro", "pro flight", "pro champs"],
                 "start_year": 2017,
                 "url": "TCT-Pro-Championships-{y}",
@@ -583,15 +597,16 @@ class USAUResults(object):
             {
                 "level": "club",
                 "event": ["tct pro", "pro flight", "pro champs"],
-                "start_year": 2015,
+                "start_year": 2016,
                 "end_year": 2016,
                 "url": "TCT-Pro-Flight-Finale-{y}",
             },
             {
                 "level": "club",
                 "event": ["tct pro", "pro flight", "pro champs"],
-                "start_year": 2017,
-                "url": "TCT-Pro-Championships-{y}",
+                "start_year": 2015,
+                "end_year": 2015,
+                "url": "TCT-Pro-Flight-Finale",
             },
             {
                 "level": "club",
