@@ -115,11 +115,11 @@ if __name__ == "__main__":
           res["Team"].apply(lambda x: "**" + x + "**")
 
     print("{event} {gender} ({year})"
-          .format(year=args.year, event=report.event, gender=report.gender))
+          .format(year=args.year, event=report, gender=report.gender))
     if args.markdown:
       with pd.option_context('display.float_format', lambda x: "%.2f" % x):
         print(usau.markdown.pandas_to_markdown(res))
     else:
       with pd.option_context('display.width', 200, 'display.max_columns', 50,
-                             'display.precision', 2):
+                             'display.max_rows', 200, 'display.precision', 2):
         print(res)

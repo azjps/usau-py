@@ -20,11 +20,11 @@ if __name__ == "__main__":
                                 "USA-Ultimate-D-I-College-Championships-2016")
     group_evt.add_argument("-e", "--event",
                            help="Name of USAU competition in shorthand")
-    parser.add_argument("--year", type=int,
+    parser.add_argument("-y", "--year", type=int,
                         help="Year of event")
     parser.add_argument("--gender", nargs="+", default=None,
                         choices=["men", "women", "mixed", "boys", "girls"])
-    parser.add_argument("--level", default="club",
+    parser.add_argument("-l", "--level", default="club",
                         choices=["club", "d1college", "d3college"])
     parser.add_argument("--data_dir", help="Path to directory to store csvs")
     parser.add_argument("--proxy",

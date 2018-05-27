@@ -61,11 +61,11 @@ class USAUResults(object):
             self.event_url = event_info["full_url"]
         else:
             self.event_url = ("{url}/events/{evt}/schedule/"
-                              "{gender}/{comp}-{gender}"
+                              "{gender}/{comp}{gender}"
                               .format(url=self.BASE_URL,
                                       evt=self.event_full,
                                       comp=self.competition,
-                                      gender=self.gender))
+                                      gender=self.gender.capitalize()))
 
         self.event_page_soup = None
         self.roster_dfs = None
@@ -176,11 +176,16 @@ class USAUResults(object):
             print("Reading roster from url: {url}".format(url=url))
         name, seed = cls.split_team_seed(team)
         # Match tables containing 'Position', i.e. cutter/handler
-        roster_table = cls.get_html_tables(url, match="Position")[0]
-        roster_table["url"] = url
-        roster_table["Team"] = name
-        roster_table["Seed"] = seed
-        return roster_table
+        try:
+            roster_table = cls.get_html_tables(url, match="Position")[0]
+            roster_table["url"] = url
+            roster_table["Team"] = name
+            roster_table["Seed"] = seed
+            return roster_table
+        except Exception:
+            _logger.exception("Unable to read HTML table for {team}: {url}"
+                              .format(url=url, team=team))
+            return None
 
     @property
     def rosters(self):
@@ -559,7 +564,14 @@ class USAUResults(object):
             {
                 "level": "d1college",
                 "event": ["nationals", "nats"],
+                "start_year": 2018,
+                "url": "USA-Ultimate-D-I-College-Championships-{y}",
+            },
+            {
+                "level": "d1college",
+                "event": ["nationals", "nats"],
                 "start_year": 2017,
+                "end_year": 2017,
                 "url": "{y}-USA-Ultimate-College-Championships",
             },
             {
@@ -570,10 +582,24 @@ class USAUResults(object):
                 "url": "USA-Ultimate-D-I-College-Championships-{y}",
             },
             {
+                "level": "d1college",
+                "event": ["nationals", "nats"],
+                "start_year": 2014,
+                "end_year": 2014,
+                "url": "USA-Ultimate-D-I-College-Championships",
+            },
+            {
                 "level": "d3college",
                 "event": ["nationals", "nats"],
                 "start_year": 2015,
                 "url": "USA-Ultimate-D-III-College-Championships-{y}",
+            },
+            {
+                "level": "d3college",
+                "event": ["nationals", "nats"],
+                "start_year": 2014,
+                "end_year": 2014,
+                "url": "USA-Ultimate-D-III-College-Championships",
             },
             {
                 "level": "club",
