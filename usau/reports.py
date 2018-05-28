@@ -72,6 +72,7 @@ class USAUResults(object):
         self.match_report_dfs = None
         self.match_result_dfs = None
         self.score_progression_dfs = None
+        self.data_dir = None
         self.executor = executor
 
     def __str__(self):
@@ -140,6 +141,7 @@ class USAUResults(object):
                 base_path + "_match_results.csv")
             self.score_progression_dfs = pd.read_csv(
                 base_path + "_scores.csv")
+            self.data_dir = data_dir
         except IOError:
             print("Unable to open downloaded CSVs at {path}"
                   .format(path=base_path))
