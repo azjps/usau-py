@@ -61,7 +61,7 @@ class USAUResults(object):
             self.event_url = event_info["full_url"]
         else:
             self.event_url = ("{url}/events/{evt}/schedule/"
-                              "{gender}/{comp}{gender}"
+                              "{gender}/{comp}-{gender}"
                               .format(url=self.BASE_URL,
                                       evt=self.event_full,
                                       comp=self.competition,
@@ -166,7 +166,7 @@ class USAUResults(object):
                 url=self.event_url))
             # page = urllib.urlopen(self.event_url).read().decode('utf-8')
             request = requests.get(self.event_url)
-            self.event_page_soup = BeautifulSoup(request.text, "lxml")
+            self.event_page_soup = BeautifulSoup(request.text, "html.parser")
         return self.event_page_soup
 
     @classmethod
@@ -635,6 +635,13 @@ class USAUResults(object):
                 "start_year": 2015,
                 "end_year": 2015,
                 "url": "TCT-Pro-Flight-Finale",
+            },
+            {
+                "level": "club",
+                "event": ["pro elite"],
+                # competition started earlier, but stats not tracked
+                "start_year": 2018,
+                "url": "TCT-Pro-Elite-Challenge-{y}",
             },
             {
                 "level": "club",

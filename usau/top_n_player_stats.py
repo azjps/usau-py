@@ -95,7 +95,8 @@ if __name__ == "__main__":
 
     # Sort by +/-
     sort_column = "+/- per Game" if args.sort_per_game else "+/-"
-    res = (roster.sort_values(sort_column, ascending=False)
+    sort_fn = roster.sort_values if hasattr(roster, "sort_values") else roster.sort
+    res = (sort_fn(sort_column, ascending=False)
                  .reset_index(drop=True)
                  .head(args.num_players)
                  [["Name", "Team",
