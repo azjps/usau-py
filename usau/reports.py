@@ -61,10 +61,11 @@ class USAUResults(object):
             self.event_url = event_info["full_url"]
         else:
             self.event_url = ("{url}/events/{evt}/schedule/"
-                              "{gender}/{comp}-{gender}"
+                              "{gender}/{comp}{gender}"
                               .format(url=self.BASE_URL,
                                       evt=self.event_full,
-                                      comp=self.competition,
+                                      # Silly USAU and the different URLs ..
+                                      comp=self.competition + ("-" if self.competition != "College" else ""),
                                       gender=self.gender.capitalize()))
 
         self.event_page_soup = None
@@ -566,7 +567,14 @@ class USAUResults(object):
             {
                 "level": "d1college",
                 "event": ["nationals", "nats"],
+                "start_year": 2019,
+                "url": "D-I-College-Championships-{y}",
+            },
+            {
+                "level": "d1college",
+                "event": ["nationals", "nats"],
                 "start_year": 2018,
+                "end_year": 2018,
                 "url": "USA-Ultimate-D-I-College-Championships-{y}",
             },
             {

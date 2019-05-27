@@ -1,9 +1,9 @@
 # usau-py
 Python utilities for scraping ultimate tournament data from USAU
 
-This repository includes some simple python modules for scraping the USAU website for tournament results, and some utility functions to manipulate and clean this data. It also includes some examples of such data downloaded as csv files, and some jupyter notebooks illustrating some statistical visualizations gleaned from this data.
+This repository includes some simple python modules for scraping the USAU website for tournament results, and some utility functions to manipulate and clean this data. It also includes some examples of such data downloaded as csv files, and some jupyter notebooks with some visualizations from this data.
 
-The `nationals_player_stats.py` CLI script provides a quick way to glean the top player contributions from a nationals tournament, where player statistics are tracked with some reliability.
+The `top_n_players.py` CLI script provides a quick way to glean the top player contributions from tournaments like nationals, where player statistics are tracked with some reliability.
 
 ## Notebooks (via nbviewer)
 
@@ -28,6 +28,6 @@ pip install git+https://github.com/azjps/usau-py.git
 
 ## Dependencies
 
-This should be both python2.7 and python3 compatible, although I have not explicitly tested with python3.
+This should be both python2.7 and python3 compatible.
 
-See the [requirements.txt](requirements.txt); [pandas 0.13+](https://github.com/pydata/pandas) is the only main module required. pandas 0.17.1+, [jupyter](http://jupyter.readthedocs.io/en/latest/), and [seaborn](https://web.stanford.edu/~mwaskom/software/seaborn/) are recommended to run and view the notebooks. beautifulsoup4 and lxml are recommended for scraping web data on-the-fly from [play.usaultimate.org](http://play.usaultimate.org), although I'd certainly accept PRs to remove these as dependencies.
+See the [requirements.txt](requirements.txt); [pandas 0.13+](https://github.com/pydata/pandas) is the only main module required. pandas 0.17.1+, [jupyter](http://jupyter.readthedocs.io/en/latest/), and [seaborn](https://web.stanford.edu/~mwaskom/software/seaborn/) are recommended to run and view the notebooks. beautifulsoup4 and lxml are recommended for scraping web data on-the-fly from [play.usaultimate.org](http://play.usaultimate.org).
