@@ -18,10 +18,10 @@ import usau.fantasy
 import usau.markdown
 
 def compute_plus_minus(df, g_weight=1, a_weight=1, d_weight=1, turn_weight=-0.5):
-  return (g_weight * df["Goals"] +
-          a_weight * df["Assists"] +
-          d_weight * df["Ds"] +
-          turn_weight * df["Turns"])
+  return (g_weight * df["Goals"].fillna(0) +
+          a_weight * df["Assists"].fillna(0) +
+          d_weight * df["Ds"].fillna(0) +
+          turn_weight * df["Turns"].fillna(0))
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
@@ -68,6 +68,13 @@ if __name__ == "__main__":
                                                  event=args.event)
     report.load_from_csvs(mandatory=False, write=True)
     roster = report.rosters
+    if "Points" in roster.columns:
+        roster.rename(columns={"Points": "Goals"}, inplace=True)
+    elif "Goals" not in roster.columns:
+        raise ValueError("No goals column found: {}".format(roster.column))
+
+    for col in ("Goals", "Assists", "Ds", "Turns"):
+      roster[col] = roster[col].fillna(0).astype(int)
     roster["+/-"] = compute_plus_minus(roster,
                                        g_weight=args.goal_weight,
                                        a_weight=args.assist_weight,

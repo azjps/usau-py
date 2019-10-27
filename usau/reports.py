@@ -180,10 +180,13 @@ class USAUResults(object):
         name, seed = cls.split_team_seed(team)
         # Match tables containing 'Position', i.e. cutter/handler
         try:
-            roster_table = cls.get_html_tables(url, match="Position")[0]
+            roster_table = cls.get_html_tables(url, match="Position", header=0)[0]
             roster_table["url"] = url
             roster_table["Team"] = name
             roster_table["Seed"] = seed
+            if "Name" not in roster_table.columns:
+                # recent website update changed Player -> Name
+                roster_table.rename(columns={"Player": "Name"}, inplace=True)
             return roster_table
         except Exception:
             _logger.exception("Unable to read HTML table for {team}: {url}"
@@ -614,7 +617,14 @@ class USAUResults(object):
             {
                 "level": "club",
                 "event": ["us open"],
+                "start_year": 2019,
+                "url": "{y}-US-Open-Club-Championship",
+            },
+            {
+                "level": "club",
+                "event": ["us open"],
                 "start_year": 2017,
+                "end_year": 2018,
                 "url": "{y}-US-Open-Club-Championships",
             },
             {
