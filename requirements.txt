@@ -8,7 +8,7 @@ certifi==2016.2.28
 cycler==0.10.0
 decorator==4.0.9
 functools32==3.2.3.post2
-html5lib==0.9999999
+html5lib==0.999999999
 ipykernel==4.3.1
 ipython==4.1.2
 ipython-genutils==0.1.0
